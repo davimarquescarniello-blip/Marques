@@ -166,6 +166,7 @@ export function startServer({ botManager, supabase, port = 3000 }) {
 
   app.delete('/clients/:id', authMiddleware, adminOnly, async (req, res) => {
     await botManager.stopBot(req.params.id);
+    await supabase.from('pedidos').update({ client_id: null }).eq('client_id', req.params.id);
     const { error } = await supabase.from('clients').delete().eq('id', req.params.id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
