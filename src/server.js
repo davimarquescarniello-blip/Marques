@@ -321,25 +321,23 @@ export function startServer({ botManager, supabase, port = 3000 }) {
             console.log(`✅ MP pagamento ${payment.id} aprovado para pedido ${pedidoId}`);
 
             for (const [, instance] of botManager.instances) {
-              const guildId = instance.clientData?.server_id;
-              if (guildId && pedido.guild_id === guildId) {
-                const channel = instance.client.channels.cache.get(pedido.channel_id);
-                if (channel) {
-                  const buyer = await instance.client.users.fetch(pedido.user_id).catch(() => null);
-                  const embed = new EmbedBuilder()
-                    .setTitle('✅ Pagamento Aprovado (Mercado Pago)')
-                    .setDescription(`Olá ${buyer || pedido.user_id}, seu pagamento foi confirmado automaticamente!\n\nAgora envie o token do seu bot para concluir a instalação.`)
-                    .setColor('#00FF00');
-                  const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                      .setCustomId(`insert_token_${pedidoId}`)
-                      .setLabel('Inserir Token')
-                      .setStyle(ButtonStyle.Primary)
-                  );
-                  await channel.send({ embeds: [embed], components: [row] });
-                }
-                break;
-              }
+              const guild = instance.client.guilds.cache.get(pedido.guild_id);
+              if (!guild) continue;
+              const channel = guild.channels.cache.get(pedido.channel_id) || await guild.channels.fetch(pedido.channel_id).catch(() => null);
+              if (!channel) continue;
+              const buyer = await instance.client.users.fetch(pedido.user_id).catch(() => null);
+              const embed = new EmbedBuilder()
+                .setTitle('✅ Pagamento Aprovado (Mercado Pago)')
+                .setDescription(`Olá ${buyer || pedido.user_id}, seu pagamento foi confirmado automaticamente!\n\nAgora envie o token do seu bot para concluir a instalação.`)
+                .setColor('#00FF00');
+              const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`insert_token_${pedidoId}`)
+                  .setLabel('Inserir Token')
+                  .setStyle(ButtonStyle.Primary)
+              );
+              await channel.send({ embeds: [embed], components: [row] });
+              break;
             }
           }
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
