@@ -2019,7 +2019,6 @@ client.on('interactionCreate', async interaction => {
           return interaction.editReply('❌ Erro ao descriptografar token.');
         }
 
-        const PUBLIC_URL = process.env.PUBLIC_URL || '';
         const encodedToken = Buffer.from(rawToken.split('.')[0], 'base64').toString().replace(/[^0-9]/g, '');
         const clientIdNum = rawToken.split('.')[0].length > 5 ? Buffer.from(rawToken.split('.')[0], 'base64').toString().replace(/\D/g, '') : '';
 
@@ -2034,9 +2033,7 @@ client.on('interactionCreate', async interaction => {
 
         const permissions = '8';
         const scopes = 'bot%20applications.commands';
-        const redirectUri = PUBLIC_URL ? `&redirect_uri=${encodeURIComponent(PUBLIC_URL + '/oauth/callback')}` : '';
-        const stateParam = `&state=${clientIdFromDb}`;
-        const oauthUrl = `https://discord.com/oauth2/authorize?client_id=${actualClientId}&permissions=${permissions}&scope=${scopes}${redirectUri}${stateParam}`;
+        const oauthUrl = `https://discord.com/oauth2/authorize?client_id=${actualClientId}&permissions=${permissions}&scope=${scopes}`;
 
         const embed = new EmbedBuilder()
           .setTitle('🤖 Bot Pronto para Instalação')
