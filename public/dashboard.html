@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - MQS Bots</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f0c29; color: #fff; min-height: 100vh;
+}
+.navbar {
+  background: rgba(255,255,255,0.05); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;
+}
+.navbar h2 { font-size: 18px; }
+.navbar button {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.navbar button:hover { background: rgba(255,255,255,0.2); }
+.container { max-width: 900px; margin: 0 auto; padding: 24px; }
+.card {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 24px; margin-bottom: 20px;
+}
+.card h3 { margin-bottom: 16px; font-size: 16px; color: rgba(255,255,255,0.8); }
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.stat-item { text-align: center; padding: 16px; background: rgba(255,255,255,0.05); border-radius: 12px; }
+.stat-item .label { font-size: 12px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1px; }
+.stat-item .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.badge.online { background: #23a55a; color: #fff; }
+.badge.offline { background: #ed4245; color: #fff; }
+.badge.connecting { background: #fee75c; color: #000; }
+.btn-action {
+  padding: 10px 20px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-right: 8px;
+}
+.btn-start { background: #23a55a; color: #fff; }
+.btn-stop { background: #ed4245; color: #fff; }
+.btn-restart { background: #5865F2; color: #fff; }
+.btn-action:hover { opacity: 0.85; transform: translateY(-1px); }
+.btn-action:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.logs-list { max-height: 300px; overflow-y: auto; }
+.log-entry { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; display: flex; gap: 12px; }
+.log-time { color: rgba(255,255,255,0.4); font-family: monospace; font-size: 12px; white-space: nowrap; }
+.log-type { font-weight: 600; min-width: 60px; }
+.log-type.info { color: #5865F2; }
+.log-type.error { color: #ed4245; }
+.log-type.expired { color: #fee75c; }
+.log-msg { color: rgba(255,255,255,0.8); word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="navbar">
+  <h2>🤖 Meu Bot</h2>
+  <button onclick="logout()">Sair</button>
+</div>
+<div class="container" id="app">
+  <div class="card">
+    <h3>📊 Status do Bot</h3>
+    <div class="status-grid">
+      <div class="stat-item"><div class="label">Status</div><div class="value"><span class="badge" id="botStatus">---</span></div></div>
+      <div class="stat-item"><div class="label">Tag do Bot</div><div class="value" id="botTag" style="font-size:16px">---</div></div>
+      <div class="stat-item"><div class="label">Plano</div><div class="value" id="botPlan">---</div></div>
+      <div class="stat-item"><div class="label">Expira em</div><div class="value" id="botExpires" style="font-size:16px">---</div></div>
+    </div>
+    <div style="margin-top:20px">
+      <button class="btn-action btn-start" id="btnStart" onclick="controlBot('start')">▶ Iniciar</button>
+      <button class="btn-action btn-stop" id="btnStop" onclick="controlBot('stop')">⏹ Parar</button>
+      <button class="btn-action btn-restart" onclick="controlBot('restart')">🔄 Reiniciar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📋 Logs Recentes</h3>
+    <div class="logs-list" id="logsList">
+      <div style="color:rgba(255,255,255,0.4);text-align:center;padding:20px">Carregando...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let user = JSON.parse(localStorage.getItem('user') || '{}');
+let clientId = user.id;
+
+function getToken() { return localStorage.getItem('token'); }
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    ...options,
+    headers: { ...options.headers, 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
+  });
+  if (res.status === 401) { localStorage.clear(); window.location.href = '/'; }
+  return res.json();
+}
+
+function logout() { localStorage.clear(); window.location.href = '/'; }
+
+async function loadStatus() {
+  if (!clientId) return;
+  const data = await api(`/bots/status/${clientId}`);
+
+  const statusEl = document.getElementById('botStatus');
+  statusEl.textContent = data.status || 'offline';
+  statusEl.className = 'badge ' + (data.status || 'offline');
+
+  document.getElementById('botTag').textContent = data.tag || '---';
+  document.getElementById('botPlan').textContent = data.plan || 'basic';
+
+  if (data.expires_at) {
+    const exp = new Date(data.expires_at);
+    const diff = exp - new Date();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    document.getElementById('botExpires').textContent = exp.toLocaleDateString('pt-BR') + (days >= 0 ? ` (${days}d)` : ' (vencido)');
+  } else {
+    document.getElementById('botExpires').textContent = '---';
+  }
+
+  document.getElementById('btnStart').disabled = data.status === 'online';
+  document.getElementById('btnStop').disabled = data.status !== 'online';
+}
+
+async function loadLogs() {
+  if (!clientId) return;
+  const logs = await api(`/logs/${clientId}`);
+  const container = document.getElementById('logsList');
+  if (!logs.length) {
+    container.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;padding:20px">Nenhum log encontrado.</div>';
+    return;
+  }
+  container.innerHTML = logs.map(l => `
+    <div class="log-entry">
+      <span class="log-time">${new Date(l.created_at).toLocaleString('pt-BR')}</span>
+      <span class="log-type ${l.type}">${l.type}</span>
+      <span class="log-msg">${l.message || ''}</span>
+    </div>
+  `).join('');
+}
+
+async function controlBot(action) {
+  await api(`/bots/${action}`, { method: 'POST', body: JSON.stringify({ clientId }) });
+  setTimeout(loadStatus, 2000);
+}
+
+if (!clientId) {
+  document.getElementById('app').innerHTML = '<div class="card" style="text-align:center;padding:40px"><h3>❌ Cliente não identificado</h3><p style="margin-top:12px;color:rgba(255,255,255,0.6)">Contate o administrador.</p></div>';
+} else {
+  loadStatus(); loadLogs();
+  setInterval(loadStatus, 10000);
+  setInterval(loadLogs, 30000);
+}
+</script>
+</body>
+</html>

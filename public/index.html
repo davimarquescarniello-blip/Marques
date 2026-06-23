@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MQS Bots - Login</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+}
+.login-card {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 40px;
+  width: 100%; max-width: 400px;
+  box-shadow: 0 25px 40px rgba(0,0,0,0.4);
+}
+.login-card h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+.login-card p { text-align: center; color: rgba(255,255,255,0.6); margin-bottom: 30px; font-size: 14px; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: rgba(255,255,255,0.7); }
+.form-group input {
+  width: 100%; padding: 12px 16px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px; color: #fff; font-size: 14px;
+  outline: none; transition: all 0.2s;
+}
+.form-group input:focus { border-color: #5865F2; background: rgba(255,255,255,0.12); }
+.form-group input::placeholder { color: rgba(255,255,255,0.3); }
+.btn {
+  width: 100%; padding: 14px;
+  background: #5865F2; border: none; border-radius: 10px;
+  color: #fff; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn:hover { background: #4752c4; transform: translateY(-1px); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.error-msg { color: #ed4245; font-size: 13px; text-align: center; margin-top: 12px; display: none; }
+.loading { text-align: center; margin-top: 12px; display: none; }
+.loading span { display: inline-block; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <h1>🔐 MQS Bots</h1>
+  <p>Plataforma de gerenciamento de bots</p>
+  <form id="loginForm">
+    <div class="form-group">
+      <label>Usuário</label>
+      <input type="text" id="username" placeholder="Digite seu usuário" required autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" id="password" placeholder="Digite sua senha" required autocomplete="current-password">
+    </div>
+    <button type="submit" class="btn" id="loginBtn">Entrar</button>
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="loading" id="loading"><span>Autenticando...</span></div>
+  </form>
+</div>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('loginBtn');
+  const errorMsg = document.getElementById('errorMsg');
+  const loading = document.getElementById('loading');
+  btn.disabled = true; loading.style.display = 'block'; errorMsg.style.display = 'none';
+
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao autenticar');
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    window.location.href = data.user.isAdmin ? '/admin.html' : '/dashboard.html';
+  } catch (err) {
+    errorMsg.textContent = err.message;
+    errorMsg.style.display = 'block';
+  } finally {
+    btn.disabled = false; loading.style.display = 'none';
+  }
+});
+
+if (localStorage.getItem('token')) {
+  (async () => {
+    try {
+      const res = await fetch('/auth/me', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+      if (res.ok) {
+        const user = await res.json();
+        window.location.href = user.isAdmin ? '/admin.html' : '/dashboard.html';
+      }
+    } catch {}
+  })();
+}
+</script>
+</body>
+</html>

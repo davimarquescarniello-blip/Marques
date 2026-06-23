@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - MQS Bots</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f0c29; color: #fff; min-height: 100vh;
+}
+.navbar {
+  background: rgba(255,255,255,0.05); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;
+}
+.navbar h2 { font-size: 18px; }
+.navbar .nav-right { display: flex; gap: 12px; align-items: center; }
+.navbar button {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.navbar button:hover { background: rgba(255,255,255,0.2); }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.card {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 24px; margin-bottom: 20px;
+}
+.card h3 { margin-bottom: 16px; font-size: 16px; color: rgba(255,255,255,0.8); }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-box {
+  background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; text-align: center;
+}
+.stat-box .num { font-size: 28px; font-weight: 700; }
+.stat-box .lbl { font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+th { color: rgba(255,255,255,0.5); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+td { color: rgba(255,255,255,0.85); }
+tr:hover td { background: rgba(255,255,255,0.03); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge.online { background: #23a55a; }
+.badge.offline { background: #ed4245; }
+.badge.connecting { background: #fee75c; color: #000; }
+.badge.yes { background: #23a55a; }
+.badge.no { background: rgba(255,255,255,0.15); }
+.btn-sm {
+  padding: 6px 12px; border: none; border-radius: 6px;
+  font-size: 12px; cursor: pointer; transition: all 0.2s; margin: 2px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.btn-sm:hover { opacity: 0.85; }
+.btn-green { background: #23a55a; color: #fff; }
+.btn-red { background: #ed4245; color: #fff; }
+.btn-blue { background: #5865F2; color: #fff; }
+.btn-yellow { background: #fee75c; color: #000; }
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #1a1a3a; border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 16px; padding: 32px; width: 100%; max-width: 500px;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal h3 { margin-bottom: 20px; font-size: 18px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; margin-bottom: 4px; font-size: 13px; color: rgba(255,255,255,0.6); }
+.form-group input, .form-group select {
+  width: 100%; padding: 10px 14px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px; color: #fff; font-size: 13px; outline: none;
+}
+.form-group input:focus { border-color: #5865F2; }
+.form-group .hint { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+.modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+.modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.btn-primary { background: #5865F2; color: #fff; }
+.btn-cancel { background: rgba(255,255,255,0.1); color: #fff; }
+@media (max-width: 768px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .container { padding: 12px; }
+  table { font-size: 12px; }
+  th, td { padding: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="navbar">
+  <h2>🛡️ Admin Panel</h2>
+  <div class="nav-right">
+    <span style="font-size:13px;color:rgba(255,255,255,0.6)" id="userLabel">Admin</span>
+    <button onclick="logout()">Sair</button>
+  </div>
+</div>
+<div class="container">
+  <div class="stats-row" id="statsRow">
+    <div class="stat-box"><div class="num" id="statTotal">-</div><div class="lbl">Total Clientes</div></div>
+    <div class="stat-box"><div class="num" id="statActive">-</div><div class="lbl">Ativos</div></div>
+    <div class="stat-box"><div class="num" id="statOnline">-</div><div class="lbl">Bots Online</div></div>
+    <div class="stat-box"><div class="num" id="statOffline">-</div><div class="lbl">Bots Offline</div></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0">📋 Clientes</h3>
+      <button class="btn-sm btn-green" onclick="openCreateModal()">➕ Novo Cliente</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Usuário</th><th>Discord ID</th><th>Plano</th><th>Status</th><th>Bot</th><th>Expira</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="clientsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE/EDIT MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">Novo Cliente</h3>
+    <div class="form-group">
+      <label>Token do Bot *</label>
+      <input type="text" id="fBotToken" placeholder="ND... (token do bot Discord)">
+      <div class="hint">Token do bot Discord. Será criptografado.</div>
+    </div>
+    <div class="form-group">
+      <label>Usuário (login)</label>
+      <input type="text" id="fUsername" placeholder="usuario_cliente">
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="text" id="fPassword" placeholder="Deixe vazio para não alterar">
+    </div>
+    <div class="form-group">
+      <label>Discord User ID</label>
+      <input type="text" id="fDiscordId" placeholder="Opcional">
+    </div>
+    <div class="form-group">
+      <label>Server ID</label>
+      <input type="text" id="fServerId" placeholder="Opcional">
+    </div>
+    <div class="form-group">
+      <label>Plano</label>
+      <select id="fPlan">
+        <option value="semanal">Semanal (7 dias)</option>
+        <option value="mensal">Mensal (30 dias)</option>
+        <option value="trimestral">Trimestral (90 dias)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Ativo</label>
+      <select id="fActive">
+        <option value="true">Sim</option>
+        <option value="false">Não</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Expira em</label>
+      <input type="datetime-local" id="fExpires">
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="fNeverExpires" onchange="document.getElementById('fExpires').disabled=this.checked">
+        Nunca expira
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="modalSaveBtn" onclick="saveClient()">💾 Salvar</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let editingId = null;
+
+function getToken() { return localStorage.getItem('token'); }
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    ...options,
+    headers: { ...options.headers, 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
+  });
+  if (res.status === 401) { localStorage.clear(); window.location.href = '/'; }
+  return res.json();
+}
+
+function logout() { localStorage.clear(); window.location.href = '/'; }
+
+async function loadStats() {
+  const stats = await api('/admin/stats');
+  document.getElementById('statTotal').textContent = stats.totalClients || 0;
+  document.getElementById('statActive').textContent = stats.activeClients || 0;
+  document.getElementById('statOnline').textContent = stats.botsOnline || 0;
+  document.getElementById('statOffline').textContent = (stats.botsTotal || 0) - (stats.botsOnline || 0);
+}
+
+async function loadClients() {
+  const clients = await api('/clients');
+  const statuses = await api('/bots/status');
+  const tbody = document.getElementById('clientsTable');
+  if (!clients.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:rgba(255,255,255,0.4)">Nenhum cliente cadastrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = clients.map(c => {
+    const status = statuses[c.id] || 'offline';
+    const exp = c.expires_at ? new Date(c.expires_at) : null;
+    const expStr = exp ? exp.toLocaleDateString('pt-BR') + (exp < new Date() ? ' ⚠️' : '') : '---';
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px">${c.id?.slice(0,8)}...</td>
+      <td>${c.username || '---'}</td>
+      <td style="font-size:11px">${c.discord_user_id || '---'}</td>
+      <td><span class="badge" style="background:rgba(88,101,242,0.3);color:#5865F2">${c.plan}</span></td>
+      <td><span class="badge ${c.active ? 'yes' : 'no'}">${c.active ? 'Ativo' : 'Inativo'}</span></td>
+      <td><span class="badge ${status}">${status}</span></td>
+      <td style="font-size:12px">${expStr}</td>
+      <td>
+        <button class="btn-sm btn-blue" onclick="editClient('${c.id}')">✏️</button>
+        <button class="btn-sm btn-green" onclick="controlBot('start','${c.id}')">▶</button>
+        <button class="btn-sm btn-red" onclick="controlBot('stop','${c.id}')">⏹</button>
+        <button class="btn-sm btn-yellow" onclick="renewClient('${c.id}')">➕30d</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function controlBot(action, id) {
+  await api(`/bots/${action}`, { method: 'POST', body: JSON.stringify({ clientId: id }) });
+  setTimeout(() => { loadClients(); loadStats(); }, 2000);
+}
+
+function openCreateModal() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Novo Cliente';
+  document.getElementById('modalSaveBtn').textContent = '💾 Criar Cliente';
+  document.getElementById('fBotToken').value = '';
+  document.getElementById('fUsername').value = '';
+  document.getElementById('fPassword').value = '';
+  document.getElementById('fDiscordId').value = '';
+  document.getElementById('fServerId').value = '';
+  document.getElementById('fPlan').value = 'basic';
+  document.getElementById('fActive').value = 'true';
+  document.getElementById('fExpires').value = '';
+  document.getElementById('fNeverExpires').checked = false;
+  document.getElementById('fExpires').disabled = false;
+  document.getElementById('modal').classList.add('active');
+}
+
+async function editClient(id) {
+  editingId = id;
+  document.getElementById('modalTitle').textContent = 'Editar Cliente';
+  document.getElementById('modalSaveBtn').textContent = '💾 Salvar';
+  const data = await api(`/clients/${id}`);
+  document.getElementById('fBotToken').value = '';
+  document.getElementById('fUsername').value = data.username || '';
+  document.getElementById('fPassword').value = '';
+  document.getElementById('fDiscordId').value = data.discord_user_id || '';
+  document.getElementById('fServerId').value = data.server_id || '';
+  document.getElementById('fPlan').value = data.plan || 'basic';
+  document.getElementById('fActive').value = data.active ? 'true' : 'false';
+  const neverExpiresCheck = document.getElementById('fNeverExpires');
+  if (!data.expires_at) {
+    neverExpiresCheck.checked = true;
+    document.getElementById('fExpires').disabled = true;
+    document.getElementById('fExpires').value = '';
+  } else {
+    neverExpiresCheck.checked = false;
+    document.getElementById('fExpires').disabled = false;
+    document.getElementById('fExpires').value = data.expires_at.slice(0,16);
+  }
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('active'); }
+
+async function saveClient() {
+  const body = {
+    username: document.getElementById('fUsername').value || null,
+    discord_user_id: document.getElementById('fDiscordId').value || null,
+    server_id: document.getElementById('fServerId').value || null,
+    plan: document.getElementById('fPlan').value,
+    active: document.getElementById('fActive').value === 'true'
+  };
+  const token = document.getElementById('fBotToken').value;
+  if (token) body.bot_token = token;
+  const password = document.getElementById('fPassword').value;
+  if (password) body.password = password;
+  const neverExpires = document.getElementById('fNeverExpires').checked;
+  const expires = document.getElementById('fExpires').value;
+  if (neverExpires) body.expires_at = null;
+  else if (expires) body.expires_at = new Date(expires).toISOString();
+  else if (!editingId) {
+    const planDurations = { semanal: 7, mensal: 30, trimestral: 90 };
+    const days = planDurations[body.plan] || 30;
+    body.expires_at = new Date(Date.now() + days * 86400000).toISOString();
+  }
+
+  if (editingId) {
+    await api(`/clients/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
+  } else {
+    await api('/clients', { method: 'POST', body: JSON.stringify(body) });
+  }
+  closeModal();
+  loadClients(); loadStats();
+}
+
+async function renewClient(id) {
+  if (!confirm('Renovar por +30 dias?')) return;
+  await api(`/clients/${id}/renew`, { method: 'POST', body: JSON.stringify({ days: 30 }) });
+  loadClients(); loadStats();
+}
+
+loadStats(); loadClients();
+setInterval(() => { loadStats(); loadClients(); }, 15000);
+</script>
+</body>
+</html>
