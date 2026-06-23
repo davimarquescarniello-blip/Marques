@@ -826,7 +826,7 @@ client.on('interactionCreate', async interaction => {
           bot_token: encryptedToken,
           active: false,
           plan,
-          username: botUser.username,
+          username: `${botUser.username}-${Date.now()}`,
           discord_user_id: interaction.user.id,
           expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
           created_at: new Date().toISOString()
