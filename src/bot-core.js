@@ -560,9 +560,7 @@ client.on('interactionCreate', async interaction => {
               email: `mqs.payment.${interaction.user.id}@gmail.com`
             });
             pixString = mpPayment.point_of_interaction?.transaction_data?.qr_code || '';
-            qrCodeUrl = mpPayment.point_of_interaction?.transaction_data?.qr_code_base64
-              ? `data:image/png;base64,${mpPayment.point_of_interaction.transaction_data.qr_code_base64}`
-              : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixString)}`;
+            qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixString)}`;
             mpPaymentId = mpPayment.id;
             await supabase.from('pedidos').update({ mp_payment_id: String(mpPayment.id) }).eq('id', insertedId);
           } catch (e) {
@@ -1600,9 +1598,7 @@ client.on('interactionCreate', async interaction => {
               email: `mqs.payment.${user.id}@gmail.com`
             });
             pixString = mpPayment.point_of_interaction?.transaction_data?.qr_code || '';
-            qrCodeUrl = mpPayment.point_of_interaction?.transaction_data?.qr_code_base64
-              ? `data:image/png;base64,${mpPayment.point_of_interaction.transaction_data.qr_code_base64}`
-              : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixString)}`;
+            qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixString)}`;
             mpPaymentId = mpPayment.id;
             await supabase.from('pedidos').update({ mp_payment_id: String(mpPayment.id) }).eq('id', insData.id);
           } catch (e) {
