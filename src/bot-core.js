@@ -557,7 +557,7 @@ client.on('interactionCreate', async interaction => {
               amount: valorTotal,
               description: `${prod.nome} - ${planoEscolhido.nome}`,
               externalReference: String(insertedId),
-              email: `${interaction.user.id}@discord.user`
+              email: `${interaction.user.id}@discord.gg`
             });
             pixString = mpPayment.point_of_interaction?.transaction_data?.qr_code || '';
             qrCodeUrl = mpPayment.point_of_interaction?.transaction_data?.qr_code_base64
@@ -1597,7 +1597,7 @@ client.on('interactionCreate', async interaction => {
               amount: parseFloat(prod.preco),
               description: prod.nome,
               externalReference: String(insData.id),
-              email: `${user.id}@discord.user`
+              email: `${user.id}@discord.gg`
             });
             pixString = mpPayment.point_of_interaction?.transaction_data?.qr_code || '';
             qrCodeUrl = mpPayment.point_of_interaction?.transaction_data?.qr_code_base64
