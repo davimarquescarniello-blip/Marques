@@ -483,8 +483,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       if (interaction.customId.startsWith('modal_qtd_plan_')) {
-        if (!isStaff) await interaction.deferReply();
-        else await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
         const parts = interaction.customId.split('_');
         const prodId = parts[3];
         const opcaoIndex = parseInt(parts[4]);
@@ -504,6 +503,14 @@ client.on('interactionCreate', async interaction => {
           .eq('plano_nome', planoEscolhido.nome);
 
         if (!stockCount || stockCount < qtd) return interaction.editReply(`❌ Estoque insuficiente. Disponível: ${stockCount || 0}, solicitado: ${qtd}.`);
+
+        const { count: pendingCount } = await supabase
+          .from('pedidos')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', interaction.user.id)
+          .eq('guild_id', interaction.guildId)
+          .eq('status', 'PENDENTE');
+        if (pendingCount > 0) return interaction.editReply('❌ Você já possui um pedido pendente. Finalize ou aguarde o atual antes de comprar novamente.');
 
         const valorTotal = parseFloat(planoEscolhido.preco) * qtd;
 
@@ -578,6 +585,7 @@ client.on('interactionCreate', async interaction => {
           : `**Produto:** ${prod.nome}\n**Plano:** ${planoEscolhido.nome}\n**Quantidade:** ${qtd}\n**Valor unitário:** R$ ${parseFloat(planoEscolhido.preco).toFixed(2)}\n**Valor total:** R$ ${valorTotal.toFixed(2)}\n\n**Código PIX Copia e Cola:**\n\`\`\`${pixString}\`\`\``;
 
         await interaction.editReply(`🔒 Canal de pagamento gerado em <#${canal.id}>`);
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 8000);
 
         const embedPix = new EmbedBuilder()
           .setTitle(`💰 Pagamento - ${prod.nome}`)
@@ -1566,6 +1574,14 @@ client.on('interactionCreate', async interaction => {
           .is('plano_nome', null);
         if (!stockCount || stockCount === 0) return interaction.editReply('❌ Este produto está sem estoque no momento.');
 
+        const { count: pendingCount } = await supabase
+          .from('pedidos')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('guild_id', guild.id)
+          .eq('status', 'PENDENTE');
+        if (pendingCount > 0) return interaction.editReply('❌ Você já possui um pedido pendente. Finalize ou aguarde o atual antes de comprar novamente.');
+
         const canal = await guild.channels.create({
           name: `🛒-pix-${user.username}`,
           type: ChannelType.GuildText,
@@ -1616,6 +1632,7 @@ client.on('interactionCreate', async interaction => {
           : `Produto: \`${prod.nome}\`\nValor: \`R$ ${parseFloat(prod.preco).toFixed(2)}\`\nChave Pix:\n\`${cfg?.pix_key || process.env.PIX_KEY}\``;
 
         await interaction.editReply(`🔒 Canal de pagamentos: <#${canal.id}>`);
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 8000);
         const embedPix = new EmbedBuilder()
           .setTitle('📥 Instruções de Pagamento')
           .setColor('#00FFCC')
