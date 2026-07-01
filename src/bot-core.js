@@ -37,6 +37,16 @@ export async function createBot(token, { supabase: _supabase, guildId: _guildId,
     }
   });
 
+const FLOW_OPTIONS = {
+  NONE: 'Nenhum',
+  AUTO_DELIVERY: 'Entrega Automática',
+  MANUAL: 'Entrega Manual',
+  BOT_SAAS: 'Bot SaaS',
+  DISCORD_ROLE: 'Cargo Discord',
+  EXTERNAL_LINK: 'Link Externo',
+  LICENSE_KEY: 'Chave / License Key'
+};
+
 const commands = [
   new SlashCommandBuilder()
     .setName('setup-vendas')
@@ -910,7 +920,10 @@ client.on('interactionCreate', async interaction => {
         const rowStock = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`action_additens_${prod.id}`).setLabel('Adicionar Itens').setStyle(ButtonStyle.Secondary).setEmoji('📦')
         );
-        return await interaction.editReply({ embeds: [embedMenuEdit], components: [rowEdit, rowStock] });
+        const rowFlow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`action_flow_${prod.id}`).setLabel('Fluxo Pós-Pagamento').setStyle(ButtonStyle.Primary).setEmoji('⚙️')
+        );
+        return await interaction.editReply({ embeds: [embedMenuEdit], components: [rowEdit, rowStock, rowFlow] });
       }
 
       if (interaction.customId === 'select_panel_stock') {
@@ -1017,6 +1030,20 @@ client.on('interactionCreate', async interaction => {
           )
         );
         return await interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('select_flow_')) {
+        if (!isStaff) return interaction.editReply({ content: '❌ Sem permissão.', components: [] });
+        const prodId = interaction.customId.split('_')[2];
+        const selectedFlow = interaction.values[0];
+        await interaction.deferUpdate();
+
+        const { error } = await supabase.from('produtos').update({ payment_flow: selectedFlow }).match({ id: prodId });
+        if (error) return interaction.followUp({ content: `❌ Erro ao salvar: ${error.message}`, flags: [MessageFlags.Ephemeral] });
+
+        const { data: prod } = await supabase.from('produtos').select('nome').match({ id: prodId }).maybeSingle();
+        const flowLabel = FLOW_OPTIONS[selectedFlow] || selectedFlow;
+        await interaction.channel.send({ content: `✅ Fluxo pós-pagamento definido como **${flowLabel}** para **${prod?.nome || 'o produto'}**.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
       }
     }
 
@@ -1187,6 +1214,7 @@ client.on('interactionCreate', async interaction => {
         const rowPrice = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`action_editname_${prod.id}`).setLabel('Editar Nome').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId(`action_editprice_${prod.id}`).setLabel('Editar Preço').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+          new ButtonBuilder().setCustomId(`action_flow_${prod.id}`).setLabel('Fluxo Pós-Pagamento').setStyle(ButtonStyle.Primary).setEmoji('⚙️'),
           new ButtonBuilder().setCustomId(`action_delete_product_${prod.id}`).setLabel('Excluir Produto').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
         );
         return await interaction.editReply({ embeds: [embedMenuEdit], components: [rowEdit, rowStock, rowPrice] });
@@ -1667,6 +1695,7 @@ client.on('interactionCreate', async interaction => {
         const rowPrice = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`action_editname_${prodId}`).setLabel('Editar Nome').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId(`action_editprice_${prodId}`).setLabel('Editar Preço').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+          new ButtonBuilder().setCustomId(`action_flow_${prodId}`).setLabel('Fluxo Pós-Pagamento').setStyle(ButtonStyle.Primary).setEmoji('⚙️'),
           new ButtonBuilder().setCustomId(`action_delete_product_${prodId}`).setLabel('Excluir Produto').setStyle(ButtonStyle.Danger).setEmoji('🗑️')
         );
         return await interaction.reply({ embeds: [embedMenuEdit], components: [rowEditOptions, rowStockOptions, rowPrice], flags: [MessageFlags.Ephemeral] });
@@ -1835,6 +1864,32 @@ client.on('interactionCreate', async interaction => {
         return await interaction.showModal(modal);
       }
 
+      if (customId.startsWith('action_flow_')) {
+        if (!isStaff) return interaction.reply({ content: '❌ Sem permissão.', flags: [MessageFlags.Ephemeral] });
+        const prodId = customId.split('_')[2];
+        const { data: prod } = await supabase.from('produtos').select('nome, payment_flow').match({ id: prodId }).maybeSingle();
+        if (!prod) return interaction.reply({ content: '❌ Produto não encontrado.', flags: [MessageFlags.Ephemeral] });
+
+        const currentFlow = prod.payment_flow || 'AUTO_DELIVERY';
+        const select = new StringSelectMenuBuilder()
+          .setCustomId(`select_flow_${prodId}`)
+          .setPlaceholder('Selecione o fluxo pós-pagamento...')
+          .addOptions(
+            Object.entries(FLOW_OPTIONS).map(([value, label]) => ({
+              label,
+              value,
+              default: value === currentFlow
+            }))
+          );
+
+        const embed = new EmbedBuilder()
+          .setTitle(`⚙️ Fluxo Pós-Pagamento: ${prod.nome}`)
+          .setDescription(`Atual: **${FLOW_OPTIONS[currentFlow]}**\n\nEscolha como o sistema deve se comportar após a confirmação do pagamento.`)
+          .setColor('#0099FF');
+
+        return await interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(select)], flags: [MessageFlags.Ephemeral] });
+      }
+
       if (customId.startsWith('approve_')) {
         await interaction.deferUpdate();
         const pedidoId = customId.split('_')[1];
@@ -1853,6 +1908,11 @@ client.on('interactionCreate', async interaction => {
 
         const { data: config } = await supabase.from('configuracoes').select('*').match({ guild_id: guild.id }).maybeSingle();
         
+        // Get product's payment_flow
+        const { data: produto } = await supabase.from('produtos').select('payment_flow').match({ id: pedido.produto_id }).maybeSingle();
+        const flow = produto?.payment_flow || null; // null = legacy behavior
+
+        // Assign client role (always, for all flows)
         if (config?.role_id) {
           try {
             const membro = await guild.members.fetch(pedido.user_id);
@@ -1866,37 +1926,56 @@ client.on('interactionCreate', async interaction => {
           }
         }
 
-        try {
-          const qtd = pedido.quantidade || 1;
-          let queryItem = supabase
-            .from('itens_estoque')
-            .select('*')
-            .eq('produto_id', pedido.produto_id)
-            .eq('vendido', false)
-            .limit(qtd);
-          if (pedido.plano_nome) {
-            queryItem = queryItem.eq('plano_nome', pedido.plano_nome);
-          } else {
-            queryItem = queryItem.is('plano_nome', null);
-          }
-          const { data: itens } = await queryItem;
+        // Delivery logic based on flow
+        let entregaDM = false;
+        let conteudoDM = null;
 
-          if (itens && itens.length > 0) {
-            const itemIds = itens.map(i => i.id);
-            await supabase.from('itens_estoque').update({ vendido: true, pedido_id: pedido.id }).in('id', itemIds);
-
-            const buyer = await client.users.fetch(pedido.user_id).catch(() => null);
-            if (buyer) {
-              const conteudos = itens.map(i => i.conteudo).join('\n');
-              const embedEntrega = new EmbedBuilder()
-                .setTitle('✅ Produto(s) Entregue(s)!')
-                .setDescription(`**Obrigado pela compra!**\n\nAqui ${itens.length > 1 ? 'estão seus produtos' : 'está o seu produto'}:\n\`\`\`${conteudos}\`\`\``)
-                .setColor('#00FF00');
-              await buyer.send({ embeds: [embedEntrega] }).catch(() => {});
+        const deveEntregarItens = flow === null || flow === 'AUTO_DELIVERY' || flow === 'BOT_SAAS' || flow === 'EXTERNAL_LINK' || flow === 'LICENSE_KEY';
+        if (deveEntregarItens) {
+          try {
+            const qtd = pedido.quantidade || 1;
+            let queryItem = supabase
+              .from('itens_estoque')
+              .select('*')
+              .eq('produto_id', pedido.produto_id)
+              .eq('vendido', false)
+              .limit(qtd);
+            if (pedido.plano_nome) {
+              queryItem = queryItem.eq('plano_nome', pedido.plano_nome);
+            } else {
+              queryItem = queryItem.is('plano_nome', null);
             }
+            const { data: itens } = await queryItem;
+
+            if (itens && itens.length > 0) {
+              const itemIds = itens.map(i => i.id);
+              await supabase.from('itens_estoque').update({ vendido: true, pedido_id: pedido.id }).in('id', itemIds);
+
+              const buyer = await client.users.fetch(pedido.user_id).catch(() => null);
+              if (buyer) {
+                conteudoDM = itens.map(i => i.conteudo).join('\n');
+                let embedTitulo, embedDesc;
+                if (flow === 'EXTERNAL_LINK') {
+                  embedTitulo = '🔗 Seu Produto Foi Entregue';
+                  embedDesc = `Seu acesso foi liberado.\n\n${conteudoDM}`;
+                } else if (flow === 'LICENSE_KEY') {
+                  embedTitulo = '🔑 Sua Licença Foi Entregue';
+                  embedDesc = `Sua compra foi aprovada.\n\n\`\`\`${conteudoDM}\`\`\``;
+                } else {
+                  embedTitulo = '✅ Produto(s) Entregue(s)!';
+                  embedDesc = `**Obrigado pela compra!**\n\nAqui ${itens.length > 1 ? 'estão seus produtos' : 'está o seu produto'}:\n\`\`\`${conteudoDM}\`\`\``;
+                }
+                const embedEntrega = new EmbedBuilder()
+                  .setTitle(embedTitulo)
+                  .setDescription(embedDesc)
+                  .setColor('#00FF00');
+                await buyer.send({ embeds: [embedEntrega] }).catch(() => {});
+                entregaDM = true;
+              }
+            }
+          } catch (e) {
+            console.error('Erro na entrega automática:', e);
           }
-        } catch (e) {
-          console.error('Erro na entrega automática:', e);
         }
 
         if (pedido.cupom_codigo) {
@@ -1909,25 +1988,60 @@ client.on('interactionCreate', async interaction => {
         if (pedido.produto_id) {
           try { await refreshChannelPanel(interaction, pedido.produto_id); } catch (e) {}
         }
-        
+
+        // Channel message based on flow
         try {
           const canal = await guild.channels.fetch(pedido.channel_id);
           if (canal) {
-            const embedOnboarding = new EmbedBuilder()
-              .setTitle('✅ Pagamento Aprovado')
-              .setDescription('Seu pagamento foi confirmado.\nAgora envie o token do seu bot para concluir a instalação.')
-              .setColor('#00FF00');
-            const rowToken = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`insert_token_${pedido.id}`)
-                .setLabel('Inserir Token')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('🔑')
-            );
-            await canal.send({ embeds: [embedOnboarding], components: [rowToken] });
+            if (flow === null || flow === 'BOT_SAAS') {
+              // Legacy / BOT_SAAS: show "Inserir Token" onboarding
+              const embedOnboarding = new EmbedBuilder()
+                .setTitle('✅ Pagamento Aprovado')
+                .setDescription('Seu pagamento foi confirmado.\nAgora envie o token do seu bot para concluir a instalação.')
+                .setColor('#00FF00');
+              const rowToken = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`insert_token_${pedido.id}`)
+                  .setLabel('Inserir Token')
+                  .setStyle(ButtonStyle.Primary)
+                  .setEmoji('🔑')
+              );
+              await canal.send({ embeds: [embedOnboarding], components: [rowToken] });
+            } else if (flow === 'AUTO_DELIVERY' || flow === 'EXTERNAL_LINK' || flow === 'LICENSE_KEY') {
+              if (entregaDM) {
+                const embedConclusao = new EmbedBuilder()
+                  .setTitle('✅ Pagamento Aprovado')
+                  .setDescription('Seu pagamento foi confirmado e seu produto foi entregue em sua mensagem privada.')
+                  .setColor('#00FF00');
+                const rowVer = new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setLabel('📦 Ver Meu Pedido').setStyle(ButtonStyle.Link).setURL('https://discord.com/channels/@me')
+                );
+                await canal.send({ embeds: [embedConclusao], components: [rowVer] });
+                setTimeout(() => canal.delete().catch(() => {}), 8000);
+              } else {
+                await canal.send('❌ Não foi possível entregar o produto. Sua DM pode estar fechada. Contacte a staff.');
+              }
+            } else if (flow === 'MANUAL') {
+              const embedManual = new EmbedBuilder()
+                .setTitle('✅ Pagamento Aprovado')
+                .setDescription('Pagamento confirmado. A equipe será notificada para realizar a entrega manualmente.\n\nAguarde o contato de um membro da staff.')
+                .setColor('#FFA500');
+              await canal.send({ embeds: [embedManual] });
+            } else if (flow === 'DISCORD_ROLE') {
+              const embedRole = new EmbedBuilder()
+                .setTitle('✅ Cargo Entregue')
+                .setDescription('Seu cargo foi entregue com sucesso.')
+                .setColor('#00FF00');
+              await canal.send({ embeds: [embedRole] });
+              setTimeout(() => canal.delete().catch(() => {}), 8000);
+            } else if (flow === 'NONE') {
+              await canal.send('✅ Pagamento confirmado. Nenhuma ação adicional necessária.');
+              setTimeout(() => canal.delete().catch(() => {}), 8000);
+            }
           }
         } catch (e) {}
 
+        // Logs channel (always)
         if (config?.logs_vendas_id) {
           try {
             const canalLogs = await guild.channels.fetch(config.logs_vendas_id).catch(() => null);

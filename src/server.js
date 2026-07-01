@@ -321,23 +321,79 @@ export function startServer({ botManager, supabase, port = 3000 }) {
           if (pedido) {
             console.log(`✅ MP pagamento ${payment.id} aprovado para pedido ${pedidoId}`);
 
+            const { data: produto } = await supabase.from('produtos').select('payment_flow').match({ id: pedido.produto_id }).maybeSingle();
+            const flow = produto?.payment_flow || null;
+
             for (const [, instance] of botManager.instances) {
               const guild = instance.client.guilds.cache.get(pedido.guild_id);
               if (!guild) continue;
               const channel = guild.channels.cache.get(pedido.channel_id) || await guild.channels.fetch(pedido.channel_id).catch(() => null);
               if (!channel) continue;
               const buyer = await instance.client.users.fetch(pedido.user_id).catch(() => null);
-              const embed = new EmbedBuilder()
-                .setTitle('✅ Pagamento Aprovado (Mercado Pago)')
-                .setDescription(`Olá ${buyer || pedido.user_id}, seu pagamento foi confirmado automaticamente!\n\nAgora envie o token do seu bot para concluir a instalação.`)
-                .setColor('#00FF00');
-              const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                  .setCustomId(`insert_token_${pedidoId}`)
-                  .setLabel('Inserir Token')
-                  .setStyle(ButtonStyle.Primary)
-              );
-              await channel.send({ embeds: [embed], components: [row] });
+
+              // Delivery for flows that need it
+              let entregaDM = false;
+              const deveEntregar = flow === null || flow === 'AUTO_DELIVERY' || flow === 'EXTERNAL_LINK' || flow === 'LICENSE_KEY' || flow === 'BOT_SAAS';
+              if (deveEntregar && pedido.produto_id) {
+                try {
+                  const qtd = pedido.quantidade || 1;
+                  let queryItem = supabase
+                    .from('itens_estoque')
+                    .select('*')
+                    .eq('produto_id', pedido.produto_id)
+                    .eq('vendido', false)
+                    .limit(qtd);
+                  if (pedido.plano_nome) queryItem = queryItem.eq('plano_nome', pedido.plano_nome);
+                  else queryItem = queryItem.is('plano_nome', null);
+                  const { data: itens } = await queryItem;
+                  if (itens && itens.length > 0) {
+                    const itemIds = itens.map(i => i.id);
+                    await supabase.from('itens_estoque').update({ vendido: true, pedido_id: pedido.id }).in('id', itemIds);
+                    if (buyer) {
+                      const conteudo = itens.map(i => i.conteudo).join('\n');
+                      let titulo, desc;
+                      if (flow === 'EXTERNAL_LINK') { titulo = '🔗 Seu Produto Foi Entregue'; desc = `Seu acesso foi liberado.\n\n${conteudo}`; }
+                      else if (flow === 'LICENSE_KEY') { titulo = '🔑 Sua Licença Foi Entregue'; desc = `Sua compra foi aprovada.\n\n\`\`\`${conteudo}\`\`\``; }
+                      else { titulo = '✅ Produto(s) Entregue(s)!'; desc = `**Obrigado pela compra!**\n\nAqui ${itens.length > 1 ? 'estão seus produtos' : 'está o seu produto'}:\n\`\`\`${conteudo}\`\`\``; }
+                      await buyer.send({ embeds: [new EmbedBuilder().setTitle(titulo).setDescription(desc).setColor('#00FF00')] }).catch(() => {});
+                      entregaDM = true;
+                    }
+                  }
+                } catch (e) { console.error('Erro entrega MP webhook:', e); }
+              }
+
+              if (flow === null || flow === 'BOT_SAAS') {
+                const embed = new EmbedBuilder()
+                  .setTitle('✅ Pagamento Aprovado (Mercado Pago)')
+                  .setDescription(`Olá ${buyer || pedido.user_id}, seu pagamento foi confirmado automaticamente!\n\nAgora envie o token do seu bot para concluir a instalação.`)
+                  .setColor('#00FF00');
+                const row = new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(`insert_token_${pedidoId}`).setLabel('Inserir Token').setStyle(ButtonStyle.Primary)
+                );
+                await channel.send({ embeds: [embed], components: [row] });
+              } else if (flow === 'AUTO_DELIVERY' || flow === 'EXTERNAL_LINK' || flow === 'LICENSE_KEY') {
+                if (entregaDM) {
+                  const embed = new EmbedBuilder()
+                    .setTitle('✅ Pagamento Aprovado')
+                    .setDescription('Seu pagamento foi confirmado e seu produto foi entregue em sua mensagem privada.')
+                    .setColor('#00FF00');
+                  const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setLabel('📦 Ver Meu Pedido').setStyle(ButtonStyle.Link).setURL('https://discord.com/channels/@me')
+                  );
+                  await channel.send({ embeds: [embed], components: [row] });
+                  setTimeout(() => channel.delete().catch(() => {}), 8000);
+                } else {
+                  await channel.send('❌ Não foi possível entregar o produto. Sua DM pode estar fechada. Contacte a staff.');
+                }
+              } else if (flow === 'MANUAL') {
+                await channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Pagamento Aprovado').setDescription('Pagamento confirmado. A equipe será notificada para realizar a entrega manualmente.').setColor('#FFA500')] });
+              } else if (flow === 'DISCORD_ROLE') {
+                await channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Cargo Entregue').setDescription('Seu cargo foi entregue com sucesso.').setColor('#00FF00')] });
+                setTimeout(() => channel.delete().catch(() => {}), 8000);
+              } else if (flow === 'NONE') {
+                await channel.send('✅ Pagamento confirmado. Nenhuma ação adicional necessária.');
+                setTimeout(() => channel.delete().catch(() => {}), 8000);
+              }
               break;
             }
           }
