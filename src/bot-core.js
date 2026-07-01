@@ -1045,6 +1045,27 @@ client.on('interactionCreate', async interaction => {
         const flowLabel = FLOW_OPTIONS[selectedFlow] || selectedFlow;
         await interaction.channel.send({ content: `✅ Fluxo pós-pagamento definido como **${flowLabel}** para **${prod?.nome || 'o produto'}**.`, flags: [MessageFlags.Ephemeral] }).catch(() => {});
       }
+
+      if (interaction.customId === 'select_cancel_pedido') {
+        if (!isStaff) return interaction.editReply({ content: '❌ Sem permissão.', components: [] });
+        const pedidoId = interaction.values[0];
+        await interaction.deferUpdate();
+
+        await supabase.from('pedidos').update({ status: 'CANCELADO' }).eq('id', pedidoId);
+
+        const { data: pedido } = await supabase.from('pedidos').select('channel_id').eq('id', pedidoId).maybeSingle();
+        if (pedido?.channel_id) {
+          try {
+            const ch = await guild.channels.fetch(pedido.channel_id).catch(() => null);
+            if (ch) {
+              await ch.send('⏳ Pedido cancelado pela staff. Este canal será deletado em 5 segundos...');
+              setTimeout(() => ch.delete().catch(() => {}), 5000);
+            }
+          } catch (e) {}
+        }
+
+        await interaction.editReply({ content: `✅ Pedido **#${pedidoId}** cancelado com sucesso!`, components: [] });
+      }
     }
 
     if (interaction.isChatInputCommand()) {
@@ -1117,7 +1138,8 @@ client.on('interactionCreate', async interaction => {
           new ButtonBuilder().setCustomId('trigger_extrato_vendas').setLabel('Extrato de Vendas').setStyle(ButtonStyle.Secondary).setEmoji('📜')
         );
         const rowCupons = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('btn_panel_cupons').setLabel('Cupons de Desconto').setStyle(ButtonStyle.Primary).setEmoji('🎟️')
+          new ButtonBuilder().setCustomId('btn_panel_cupons').setLabel('Cupons de Desconto').setStyle(ButtonStyle.Primary).setEmoji('🎟️'),
+          new ButtonBuilder().setCustomId('btn_panel_pending').setLabel('Pedidos Pendentes').setStyle(ButtonStyle.Danger).setEmoji('⏳')
         );
         return await interaction.reply({ embeds: [embedPainelConfig], components: [rowPainel, rowCupons], flags: [MessageFlags.Ephemeral] });
       }
@@ -1586,6 +1608,46 @@ client.on('interactionCreate', async interaction => {
           embed.addFields({ name: `ID: #${v.id} - ${nomeProduto}`, value: `Valor: R$ ${parseFloat(v.valor || 0).toFixed(2)} | Comprador: <@${v.user_id}>` });
         }
         return await interaction.editReply({ embeds: [embed] });
+      }
+
+      if (customId === 'btn_panel_pending') {
+        if (!isStaff) return interaction.reply({ content: '❌ Sem permissão.', flags: [MessageFlags.Ephemeral] });
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+        const { data: pendentes } = await supabase
+          .from('pedidos')
+          .select('id, user_id, valor, produto_id, channel_id, created_at')
+          .eq('status', 'PENDENTE')
+          .eq('guild_id', interaction.guildId)
+          .order('created_at', { ascending: false })
+          .limit(25);
+
+        if (!pendentes || pendentes.length === 0) return interaction.editReply('✅ Nenhum pedido pendente neste servidor.');
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('select_cancel_pedido')
+          .setPlaceholder('Selecione um pedido para cancelar...')
+          .addOptions(
+            await Promise.all(pendentes.slice(0, 25).map(async p => {
+              let nomeProduto = 'Item';
+              if (p.produto_id) {
+                const { data: pData } = await supabase.from('produtos').select('nome').match({ id: p.produto_id }).maybeSingle();
+                if (pData?.nome) nomeProduto = pData.nome;
+              }
+              return {
+                label: `#${p.id} - ${nomeProduto}`,
+                description: `R$ ${parseFloat(p.valor || 0).toFixed(2)} | <@${p.user_id}>`,
+                value: String(p.id)
+              };
+            }))
+          );
+
+        const embed = new EmbedBuilder()
+          .setTitle('⏳ Pedidos Pendentes')
+          .setDescription(`Total: **${pendentes.length}** pedido(s) pendente(s)\n\nSelecione um para cancelar.`)
+          .setColor('#FF0000');
+
+        return await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
       }
 
       if (customId.startsWith('buy_main_')) {
@@ -2110,6 +2172,12 @@ client.on('interactionCreate', async interaction => {
 
       if (customId.startsWith('cancel_channel_')) {
         await interaction.deferUpdate();
+        const cancelPedidoId = customId.split('_')[2];
+        if (cancelPedidoId && cancelPedidoId !== 'fallback') {
+          await supabase.from('pedidos').update({ status: 'CANCELADO' }).eq('id', cancelPedidoId);
+        } else {
+          await supabase.from('pedidos').update({ status: 'CANCELADO' }).eq('channel_id', interaction.channelId);
+        }
         try {
           await interaction.channel.send('⏳ Venda cancelada. Este canal será deletado em 5 segundos...');
           setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
