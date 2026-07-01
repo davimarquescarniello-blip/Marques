@@ -1048,23 +1048,39 @@ client.on('interactionCreate', async interaction => {
 
       if (interaction.customId === 'select_cancel_pedido') {
         if (!isStaff) return interaction.editReply({ content: '❌ Sem permissão.', components: [] });
-        const pedidoId = interaction.values[0];
+        const selectedValues = interaction.values;
         await interaction.deferUpdate();
 
-        await supabase.from('pedidos').update({ status: 'CANCELADO' }).eq('id', pedidoId);
-
-        const { data: pedido } = await supabase.from('pedidos').select('channel_id').eq('id', pedidoId).maybeSingle();
-        if (pedido?.channel_id) {
-          try {
-            const ch = await guild.channels.fetch(pedido.channel_id).catch(() => null);
-            if (ch) {
-              await ch.send('⏳ Pedido cancelado pela staff. Este canal será deletado em 5 segundos...');
-              setTimeout(() => ch.delete().catch(() => {}), 5000);
-            }
-          } catch (e) {}
+        async function cancelPedido(id) {
+          await supabase.from('pedidos').update({ status: 'CANCELADO' }).eq('id', id);
+          const { data: pedido } = await supabase.from('pedidos').select('channel_id').eq('id', id).maybeSingle();
+          if (pedido?.channel_id) {
+            try {
+              const ch = await guild.channels.fetch(pedido.channel_id).catch(() => null);
+              if (ch) {
+                await ch.send('⏳ Pedido cancelado pela staff.').catch(() => {});
+                setTimeout(() => ch.delete().catch(() => {}), 3000);
+              }
+            } catch (e) {}
+          }
         }
 
-        await interaction.editReply({ content: `✅ Pedido **#${pedidoId}** cancelado com sucesso!`, components: [] });
+        if (selectedValues.includes('CANCEL_ALL')) {
+          const { data: todos } = await supabase
+            .from('pedidos')
+            .select('id, channel_id')
+            .eq('status', 'PENDENTE')
+            .eq('guild_id', interaction.guildId);
+          for (const p of todos) {
+            await cancelPedido(p.id);
+          }
+          await interaction.editReply({ content: `✅ **${todos.length}** pedido(s) cancelado(s) com sucesso!`, components: [] });
+        } else {
+          for (const id of selectedValues) {
+            await cancelPedido(id);
+          }
+          await interaction.editReply({ content: `✅ **${selectedValues.length}** pedido(s) cancelado(s) com sucesso!`, components: [] });
+        }
       }
     }
 
@@ -1624,27 +1640,44 @@ client.on('interactionCreate', async interaction => {
 
         if (!pendentes || pendentes.length === 0) return interaction.editReply('✅ Nenhum pedido pendente neste servidor.');
 
+        const userCache = {};
+        for (const p of pendentes) {
+          if (!userCache[p.user_id]) {
+            try { const u = await client.users.fetch(p.user_id); userCache[p.user_id] = u.username; }
+            catch { userCache[p.user_id] = `ID: ${p.user_id.slice(0, 8)}...`; }
+          }
+        }
+
+        const options = [
+          {
+            label: '🗑️ Cancelar Todos os Pedidos',
+            description: `Cancela todos os ${pendentes.length} pedidos pendentes`,
+            value: 'CANCEL_ALL'
+          },
+          ...await Promise.all(pendentes.slice(0, 24).map(async p => {
+            let nomeProduto = 'Item';
+            if (p.produto_id) {
+              const { data: pData } = await supabase.from('produtos').select('nome').match({ id: p.produto_id }).maybeSingle();
+              if (pData?.nome) nomeProduto = pData.nome;
+            }
+            return {
+              label: `${userCache[p.user_id] || 'Desconhecido'} - ${nomeProduto}`,
+              description: `R$ ${parseFloat(p.valor || 0).toFixed(2)}`,
+              value: String(p.id)
+            };
+          }))
+        ];
+
         const selectMenu = new StringSelectMenuBuilder()
           .setCustomId('select_cancel_pedido')
-          .setPlaceholder('Selecione um pedido para cancelar...')
-          .addOptions(
-            await Promise.all(pendentes.slice(0, 25).map(async p => {
-              let nomeProduto = 'Item';
-              if (p.produto_id) {
-                const { data: pData } = await supabase.from('produtos').select('nome').match({ id: p.produto_id }).maybeSingle();
-                if (pData?.nome) nomeProduto = pData.nome;
-              }
-              return {
-                label: `#${p.id} - ${nomeProduto}`,
-                description: `R$ ${parseFloat(p.valor || 0).toFixed(2)} | <@${p.user_id}>`,
-                value: String(p.id)
-              };
-            }))
-          );
+          .setPlaceholder('Selecione um ou mais pedidos...')
+          .setMinValues(1)
+          .setMaxValues(options.length)
+          .addOptions(options);
 
         const embed = new EmbedBuilder()
           .setTitle('⏳ Pedidos Pendentes')
-          .setDescription(`Total: **${pendentes.length}** pedido(s) pendente(s)\n\nSelecione um para cancelar.`)
+          .setDescription(`Total: **${pendentes.length}** pedido(s) pendente(s)\n\nSelecione um ou mais para cancelar, ou escolha "Cancelar Todos".`)
           .setColor('#FF0000');
 
         return await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
